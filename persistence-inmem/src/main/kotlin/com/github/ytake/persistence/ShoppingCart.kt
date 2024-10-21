@@ -135,26 +135,23 @@ class ShoppingCart(
     }
 
     private fun onGet(state: State, cmd: Get): Effect<Event, State> {
-        cmd.replyTo.tell(state.toSummary)
-        return Effect().none()
+        return Effect().reply(cmd.replyTo, state.toSummary)
     }
 
     private inner class OpenShoppingCartCommandHandlers {
         fun onAddItem(state: State, cmd: AddItem): Effect<Event, State> {
             return when {
                 state.hasItem(cmd.itemId) -> {
-                    cmd.replyTo.tell(StatusReply.error("Item '${cmd.itemId}' was already added to this shopping cart"))
-                    Effect().none()
+                    Effect().reply(cmd.replyTo, StatusReply.error("Item '${cmd.itemId}' was already added to this shopping cart"))
                 }
 
                 cmd.quantity <= 0 -> {
-                    cmd.replyTo.tell(StatusReply.error("Quantity must be greater than zero"))
-                    Effect().none()
+                    Effect().reply(cmd.replyTo, StatusReply.error("Quantity must be greater than zero"))
                 }
 
                 else -> {
                     Effect().persist(ItemAdded(cartId, cmd.itemId, cmd.quantity))
-                        .thenRun { updatedCart: State -> cmd.replyTo.tell(StatusReply.success(updatedCart.toSummary)) }
+                        .thenReply(cmd.replyTo, { updatedCart: State -> StatusReply.success(updatedCart.toSummary) })
                 }
             }
         }
@@ -162,62 +159,55 @@ class ShoppingCart(
         fun onRemoveItem(state: State, cmd: RemoveItem): Effect<Event, State> {
             return if (state.hasItem(cmd.itemId)) {
                 Effect().persist(ItemRemoved(cartId, cmd.itemId))
-                    .thenRun { updatedCart: State -> cmd.replyTo.tell(StatusReply.success(updatedCart.toSummary)) }
+                    .thenReply(cmd.replyTo, { updatedCart: State -> StatusReply.success(updatedCart.toSummary) })
             } else {
-                cmd.replyTo.tell(StatusReply.success(state.toSummary))
-                Effect().none()
+                Effect().reply(cmd.replyTo, StatusReply.success(state.toSummary))
             }
         }
 
         fun onAdjustItemQuantity(state: State, cmd: AdjustItemQuantity): Effect<Event, State> {
             return when {
                 cmd.quantity <= 0 -> {
-                    cmd.replyTo.tell(StatusReply.error("Quantity must be greater than zero"))
-                    Effect().none()
+                    Effect().reply(cmd.replyTo,StatusReply.error("Quantity must be greater than zero") )
                 }
 
                 state.hasItem(cmd.itemId) -> {
-                    Effect().persist(ItemQuantityAdjusted(cartId, cmd.itemId, cmd.quantity))
-                        .thenRun { updatedCart: State -> cmd.replyTo.tell(StatusReply.success(updatedCart.toSummary)) }
+                    Effect().persist(ItemQuantityAdjusted(cartId, cmd.itemId, cmd.quantity)).thenReply(cmd.replyTo, { updatedCart ->
+                        StatusReply.success(updatedCart.toSummary)
+                    })
                 }
 
                 else -> {
-                    cmd.replyTo.tell(StatusReply.error("Cannot adjust quantity for item '${cmd.itemId}'. Item not present on cart"))
-                    Effect().none()
+                    Effect().reply(cmd.replyTo, StatusReply.error("Cannot adjust quantity for item '${cmd.itemId}'. Item not present on cart"))
                 }
             }
         }
 
         fun onCheckout(state: State, cmd: Checkout): Effect<Event, State> {
             return if (state.isEmpty) {
-                cmd.replyTo.tell(StatusReply.error("Cannot checkout an empty shopping cart"))
-                Effect().none()
+                Effect().reply(cmd.replyTo, StatusReply.error("Cannot checkout an empty shopping cart"))
             } else {
                 Effect().persist(CheckedOut(cartId, Instant.now()))
-                    .thenRun { updatedCart: State -> cmd.replyTo.tell(StatusReply.success(updatedCart.toSummary)) }
+                    .thenReply( cmd.replyTo, { updatedCart: State -> StatusReply.success(updatedCart.toSummary) })
             }
         }
     }
 
     private inner class CheckedOutCommandHandlers {
         fun onAddItem(cmd: AddItem): Effect<Event, State> {
-            cmd.replyTo.tell(StatusReply.error("Can't add an item to an already checked out shopping cart"))
-            return Effect().none()
+            return Effect().reply(cmd.replyTo, StatusReply.error("Can't add an item to an already checked out shopping cart"))
         }
 
         fun onRemoveItem(cmd: RemoveItem): Effect<Event, State> {
-            cmd.replyTo.tell(StatusReply.error("Can't remove an item from an already checked out shopping cart"))
-            return Effect().none()
+            return Effect().reply(cmd.replyTo, StatusReply.error("Can't remove an item from an already checked out shopping cart"))
         }
 
         fun onAdjustItemQuantity(cmd: AdjustItemQuantity): Effect<Event, State> {
-            cmd.replyTo.tell(StatusReply.error("Can't adjust item on an already checked out shopping cart"))
-            return Effect().none()
+            return Effect().reply(cmd.replyTo, StatusReply.error("Can't adjust item on an already checked out shopping cart"))
         }
 
         fun onCheckout(cmd: Checkout): Effect<Event, State> {
-            cmd.replyTo.tell(StatusReply.error("Can't checkout already checked out shopping cart"))
-            return Effect().none()
+            return Effect().reply(cmd.replyTo, StatusReply.error("Can't checkout already checked out shopping cart"))
         }
     }
 
